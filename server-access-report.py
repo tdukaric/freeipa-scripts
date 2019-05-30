@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 '''
  2016 - March - 2
  Author: Jerel Gilmer
@@ -9,15 +9,15 @@ import sys
 import ldap
 
 def print_usage():
- print "Usage: server-access-report.py <hostname>"
- print "This script generates the list of allowed users for each service defined in applicable HBAC rules.\n"
- print "<hostname> - System hostname; This can be the short name\n"
- print "For report of all systems, use \'.\'\n"
- print "Make sure to set the below variables in the script:"
- print "\tDOMAIN: Domain component"
- print "\tLDAP_SERVER: LDAP server to be queried"
- print "\tLDAP_USER: LDAP user to query server; preferable a read-only account" 
- print "\tLDAP_PW: LDAP user's password\n"
+ print("Usage: server-access-report.py <hostname>")
+ print("This script generates the list of allowed users for each service defined in applicable HBAC rules.\n")
+ print("<hostname> - System hostname; This can be the short name\n")
+ print("For report of all systems, use \'.\'\n")
+ print("Make sure to set the below variables in the script:")
+ print("\tDOMAIN: Domain component")
+ print("\tLDAP_SERVER: LDAP server to be queried")
+ print("\tLDAP_USER: LDAP user to query server; preferable a read-only account")
+ print("\tLDAP_PW: LDAP user's password\n")
  sys.exit(1)
 
 try:
@@ -27,16 +27,16 @@ except:
 
 ## LDAP Connection Info and bind to the LDAP server
 ## Uncomment and set these variables to the appropriate values
-## Below are examples 
+## Below are examples
 #DOMAIN = "dc=sub,dc=example,dc=com"
 #LDAP_SERVER = "ldap://ipaserver1.sub.example.com"
 #LDAP_USER = "uid=user1,cn=users,cn=compat," + DOMAIN
 #LDAP_PW = "Password123"
 
 try:
- DOMAIN 
+ DOMAIN
  LDAP_SERVER
- LDAP_USER 
+ LDAP_USER
  LDAP_PW
 except:
  print_usage()
@@ -93,16 +93,16 @@ HBACRULE_ALL_SERVERS = l.search_s(baseHBACDN, scope, hbacAllServersFilter, hbacA
 ALL_HOSTS.sort()
 
 def findUID(user):
- uid = filter(lambda x: user in x, ALL_USERS)
- return uid[0][1]['uid'][0]
+ uid = [val for val in ALL_USERS if user in val]
+ return uid[0][1]['uid'][0].decode()
 
 def findGroupMembers(groupname):
  if "cn=groups,cn" not in groupname:
   pass
- group = filter(lambda x: groupname in x, ALL_GROUPS)
+ group = [val for val in ALL_GROUPS if groupname in val][0]
  try:
-  groupmembers = group[0][1]['member']
- except: 
+  groupmembers = [val.decode() for val in group[1]['member']]
+ except:
   groupmembers = ""
  for user in groupmembers:
   if "cn=groups,cn" in user:
@@ -110,52 +110,52 @@ def findGroupMembers(groupname):
     yield i
   else:
    yield (findUID(user))
-  
+
 def findServiceName(service_name):
- s = filter(lambda x: service_name in x, ALL_HBACSERVICES)
- return s[0][1]['cn'][0]
+ s = [val for val in ALL_HBACSERVICES if service_name in val]
+ return s[0][1]['cn'][0].decode()
 
 def findServiceGroupMembers(service_group):
  allServices = []
- serviceGroup = filter(lambda x: service_group in x, ALL_HBACSERVICEGROUPS)
- serviceGroupMembers = serviceGroup[0][1]['member']
+ serviceGroup = [val for val in ALL_HBACSERVICEGROUPS if service_group in val]
+ serviceGroupMembers = [val.decode() for val in serviceGroup[0][1]['member']]
  for i in serviceGroupMembers:
   allServices.append(findServiceName(i))
  formattedAllServices = ', '.join(allServices)
  return formattedAllServices
 
 def accessToAllSystems():
- allSystemsHBACRules = {} 
+ allSystemsHBACRules = {}
 
  for hbacname in HBACRULE_ALL_SERVERS:
-  hbacrule = filter(lambda x: hbacname[0] in x, ALL_HBACRULES)
-  
+  hbacrule = [val for val in ALL_HBACRULES if hbacname[0] in val][0]
+
   for hbacuser in hbacrule:
    services = []
    allowedUsers = []
    users = []
    groups = []
 
-   try:
-    users = filter(lambda x: "cn=users,cn" in x, hbacuser[1]['memberUser'])
-   except:
-    users = []
+   if isinstance(hbacuser, dict) and 'memberUser' in hbacuser.keys():
+     users = [val for val in hbacuser['memberUser'] if 'cn=users,cn' in str(val)]
+   else:
+     users = []
 
-   try:
-    groups = filter(lambda x: "cn=groups,cn" in x, hbacuser[1]['memberUser'])
-   except:
+   if isinstance(hbacuser, dict) and 'memberUser' in hbacuser.keys():
+    groups = [val.decode() for val in hbacuser['memberUser'] if 'cn=groups,cn' in val.decode()]
+   else:
     groups = []
 
-   try:
-    hbacservice = hbacuser[1]['memberService']
+   if isinstance(hbacuser, dict) and 'memberService' in hbacuser.keys():
+    hbacservice = [val.decode() for val in hbacuser['memberService']]
     for i in hbacservice:
      if "hbacservicegroups,cn" in i:
       services.append(findServiceGroupMembers(i))
      else:
       services.append(findServiceName(i))
-   except:
+   else:
     try:
-     services = hbacuser[1]['serviceCategory'][0]
+     services = hbacuser['serviceCategory'][0]
     except:
      services = ['None']
 
@@ -164,8 +164,8 @@ def accessToAllSystems():
 
    for i in groups:
     allowedUsers += (findGroupMembers(i))
- 
-  allSystemsHBACRules[hbacrule[0][0]] = {'services': services, 'allowedUsers': allowedUsers}
+
+  allSystemsHBACRules[hbacrule[0]] = {'services': services, 'allowedUsers': allowedUsers}
 
  return allSystemsHBACRules
 
@@ -191,16 +191,17 @@ def main():
   results = {}
   x = 1
 
-  fqdn = entry[1]['fqdn'][0]
- 
-  print "HOSTNAME = ", fqdn
+  fqdn = entry[1]['fqdn'][0].decode()
+
+  print("HOSTNAME = " + fqdn)
   try:
-   membership = filter(lambda x: "hbac,dc" in x, entry[1]['memberOf'])
+   membership = [val for val in entry[1]['memberOf'] if 'hbac,dc' in val.decode()]
   except:
    membership = []
 
   for hbacname in membership:
-   hbacrule = filter(lambda x: hbacname in x, ALL_HBACRULES)
+   hbacrule = [val for val in ALL_HBACRULES if hbacname in val]
+
    for hbacuser in hbacrule:
     allowedUsers = []
     allowedUsersLst = []
@@ -210,38 +211,41 @@ def main():
     try:
      hbacservice = hbacuser[1]['memberService']
      for i in hbacservice:
-      if "hbacservicegroups,cn" in i:
+      if "hbacservicegroups,cn" in i.encode():
        services.append(findServiceGroupMembers(i))
-      else:   
+      else:
        services.append(findServiceName(i))
     except:
      try:
       services = hbacuser[1]['serviceCategory'][0]
      except:
-      services = [] 
-    try:
-     users = filter(lambda x: "cn=users,cn" in x, hbacuser[1]['memberUser'])
-    except: 
-     users = []
- 
-    try:
-     groups = filter(lambda x: "cn=groups,cn" in x, hbacuser[1]['memberUser'])
-    except:
+      services = []
+
+
+    if isinstance(hbacuser, dict) and 'memberUser' in hbacuser.keys():
+      users = [val.decode() for val in hbacuser['memberUser'] if 'cn=users,cn' in val]
+    else:
+      users = []
+
+    if isinstance(hbacuser, dict) and 'memberUser' in hbacuser.keys():
+     groups = [val.decode() for val in hbacuser['memberUser'] if 'cn=groups,cn' in val]
+    else:
      groups = []
-   
+
     for i in users:
      allowedUsers.append(findUID(i))
 
     for i in groups:
      allowedUsers += findGroupMembers(i)
- 
+
     HBACAllowedList[hbacrule[0][0]] = {'services': services, 'allowedUsers': allowedUsers}
 
   systemWide = accessToAllSystems()
   HBACAllowedList.update(accessToAllSystems())
 
-  for key, value in HBACAllowedList.iteritems():
-  
+
+  for key, value in HBACAllowedList.items():
+
    if isinstance(value['services'], list):
     services = ', '.join(value['services'])
    else:
@@ -262,7 +266,7 @@ def main():
 
   for i in results:
    results_services = results[i]['services']
- 
+
    results_allowedUsers = list(nestedL(results[i]['allowedUsers']))
    results_allowedUsersSet = set(results_allowedUsers)
    results_allowedUsersLst = list(results_allowedUsersSet)
@@ -273,7 +277,7 @@ def main():
     results_services = 'empty'
    if not formatted_allowedUsers:
     formatted_allowedUsers = 'empty'
-   print "SERVICES = ", results_services
-   print "ALLOWED USERS = ", formatted_allowedUsers, "\n"
+   print("SERVICES = " + results_services)
+   print("ALLOWED USERS = " + formatted_allowedUsers + "\n")
 
 main()
